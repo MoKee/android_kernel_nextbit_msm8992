@@ -146,77 +146,6 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 	return 0;
 }
 
-static char panel_reg[2] = {0x0A, 0x00};
-static ssize_t panel_print_status(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
-{
-	int rx_len = 0;
-	int i, lx = 0;
-	char panel_reg_buf[128] = {0x0};
-	char rx_buf[128] = {0x0};
-
-	mdss_dsi_panel_cmd_read(ctrl_pdata, panel_reg[0],
-		panel_reg[1], NULL, rx_buf, 1);
-
-	rx_len = ctrl_pdata->rx_len;
-
-	for (i = 0; i < rx_len; i++) {
-		lx += snprintf(panel_reg_buf + lx, sizeof(panel_reg_buf),
-			 "%s%02x", "", rx_buf[i]);
-	}
-
-	return 0;
-}
-
-/*FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade {*/
-static bool IsReadLCM = false;
-static bool IsnewLCM = true;
-static char panel_reg2[2] = {0xdb, 0x00}; //catch lcm version
-ssize_t panel_print_status2(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
-{
-	int rx_len = 0;
-	int i, lx = 0;
-	char panel_reg_buf[128] = {0x0};
-	char rx_buf[128] = {0x0};
-
-	if (IsReadLCM)
-		return 0;
-
-	mdss_dsi_panel_cmd_read(ctrl_pdata, panel_reg2[0],
-		panel_reg2[1], NULL, rx_buf, 1);
-
-	rx_len = ctrl_pdata->rx_len;
-
-	for (i = 0; i < rx_len; i++) {
-		lx += snprintf(panel_reg_buf + lx, sizeof(panel_reg_buf),
-			"%s%02x", "", rx_buf[i]);
-	}
-	pr_info("panel_reg_buf:%s", panel_reg_buf);
-	if(strcmp(panel_reg_buf,"00")==0) // old lcm
-	{
-		pr_info("old panel\n");
-		IsnewLCM = false;
-	}
-	else if(strcmp(panel_reg_buf,"02")==0)
-	{
-		pr_info("new panel\n");
-		IsnewLCM = true;
-	}
-	else
-	{
-		pr_info("old panel\n");
-		IsnewLCM = false;
-	}
-
-	IsReadLCM = true;
-	return 0;
-}
-
-bool IsNewLCM(void)
-{
-	return IsnewLCM;
-}
-/*} FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade*/
-
 void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds, u32 flags)
 {
@@ -290,17 +219,6 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			goto disp_en_gpio_err;
 		}
 	}
-#ifdef CONFIG_MACH_FIH_NBQ
-	if (gpio_is_valid(ctrl_pdata->disp_ldo_gpio)) {
-		rc = gpio_request(ctrl_pdata->disp_ldo_gpio,
-						"ldo_enable");
-		if (rc) {
-			pr_err("request ldo_en gpio failed, rc=%d\n",
-				       rc);
-			goto disp_ldo_gpio_err;
-		}
-	}
-#endif
 	rc = gpio_request(ctrl_pdata->rst_gpio, "disp_rst_n");
 	if (rc) {
 		pr_err("request reset gpio failed, rc=%d\n",
@@ -335,11 +253,6 @@ rst_gpio_err:
 	if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 		gpio_free(ctrl_pdata->disp_en_gpio);
 disp_en_gpio_err:
-#ifdef CONFIG_MACH_FIH_NBQ
-	if (gpio_is_valid(ctrl_pdata->disp_ldo_gpio))
-		gpio_free(ctrl_pdata->disp_ldo_gpio);
-disp_ldo_gpio_err:
-#endif
 	return rc;
 }
 
@@ -362,13 +275,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			   __func__, __LINE__);
 	}
 
-#ifdef CONFIG_MACH_FIH_NBQ
-	if (!gpio_is_valid(ctrl_pdata->disp_ldo_gpio)) {
-		pr_debug("%s:%d, ldo line not configured\n",
-			   __func__, __LINE__);
-	}
-#endif
-
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio)) {
 		pr_debug("%s:%d, reset line not configured\n",
 			   __func__, __LINE__);
@@ -387,11 +293,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		if (!pinfo->cont_splash_enabled) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
-
-#ifdef CONFIG_MACH_FIH_NBQ
-			if (gpio_is_valid(ctrl_pdata->disp_ldo_gpio))
-				gpio_set_value((ctrl_pdata->disp_ldo_gpio), 1);
-#endif
 
 			for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
 				gpio_set_value((ctrl_pdata->rst_gpio),
@@ -417,26 +318,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			pr_debug("%s: Reset panel done\n", __func__);
 		}
 	} else {
-#ifdef CONFIG_MACH_FIH_NBQ
-		if (gpio_is_valid(ctrl_pdata->mode_gpio))
-			gpio_free(ctrl_pdata->mode_gpio);
-		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
-			gpio_free(ctrl_pdata->bklt_en_gpio);
-		}
-		gpio_set_value((ctrl_pdata->rst_gpio), 0);
-		gpio_free(ctrl_pdata->rst_gpio);
-		usleep(5000); //JY added to match CTC power off spec 20151109
-		if (gpio_is_valid(ctrl_pdata->disp_ldo_gpio)) {
-			gpio_set_value((ctrl_pdata->disp_ldo_gpio), 0);
-			gpio_free(ctrl_pdata->disp_ldo_gpio);
-		}
-		usleep(1000); //JY added to match CTC power off spec 20151109
-		if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
-			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
-			gpio_free(ctrl_pdata->disp_en_gpio);
-		}
-#else
 		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
 			gpio_free(ctrl_pdata->bklt_en_gpio);
@@ -449,7 +330,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		gpio_free(ctrl_pdata->rst_gpio);
 		if (gpio_is_valid(ctrl_pdata->mode_gpio))
 			gpio_free(ctrl_pdata->mode_gpio);
-#endif
 	}
 	return rc;
 }
@@ -796,9 +676,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 			mdss_dsi_panel_update_fps(ctrl, dynamic_rate);
 		}
 	}
-
-	//Buda added for BBS log
-	if (1) panel_print_status(ctrl);
 
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;

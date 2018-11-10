@@ -30,10 +30,6 @@
 #include "mdss_debug.h"
 #include "mdss_livedisplay.h"
 
-/*FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade {*/
-extern ssize_t panel_print_status2(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
-/*} FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade*/
-
 #define XO_CLK_RATE	19200000
 
 static struct dsi_drv_cm_data shared_ctrl_data;
@@ -900,10 +896,6 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 	}
 
 	mdss_livedisplay_update(ctrl_pdata, MODE_UPDATE_ALL);
-
-// FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade {
-	panel_print_status2(ctrl_pdata);
-//} FIH, Hubert, 20151127, use lcm regs (DBh) to work with TP FW upgrade
 
 error:
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
@@ -2152,18 +2144,6 @@ int dsi_panel_device_register(struct device_node *pan_node,
 			pr_err("%s:%d, Disp_en gpio not specified\n",
 					__func__, __LINE__);
 	}
-
-#ifdef CONFIG_MACH_FIH_NBQ
-	if (ctrl_pdata->disp_ldo_gpio <= 0) {
-		ctrl_pdata->disp_ldo_gpio = of_get_named_gpio(
-			ctrl_pdev->dev.of_node,
-			"qcom,platform-ldo-gpio", 0);
-
-		if (!gpio_is_valid(ctrl_pdata->disp_ldo_gpio))
-			pr_err("%s:%d, Disp_ldo gpio not specified\n",
-					__func__, __LINE__);
-	}
-#endif
 
 	ctrl_pdata->disp_te_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 		"qcom,platform-te-gpio", 0);
